@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
+using Microsoft.Win32;
 
 namespace ScheduleManager
 {
@@ -23,11 +24,13 @@ namespace ScheduleManager
         private Dictionary<int, TextBox> textBoxList = new Dictionary<int, TextBox>();
         private Dictionary<int, Label> labelList = new Dictionary<int, Label>();
         private Dictionary<int, Button> buttonList = new Dictionary<int, Button>();
+        private Dictionary<int, NumericUpDown> durationTextBoxList = new Dictionary<int, NumericUpDown>();
 
         //loading saved tasks
         private Dictionary<int, Label> tasksLabelList = new Dictionary<int, Label>();
         private Dictionary<int, Label> tasksActiveInactiveLabelList = new Dictionary<int, Label>();
         private Dictionary<int, Button> tasksButtonList = new Dictionary<int, Button>();
+        private Dictionary<int, Button> tasksActiveStateButtonList = new Dictionary<int, Button>();
 
         private double intervalDuration = 0;
 
@@ -39,21 +42,29 @@ namespace ScheduleManager
 
         private string DBName = "schedule_manager";
         private string textBoxName = "taskTextBox_";
+        private string durationTextBoxName = "durationTextBox_";
         private string checkBoxName = "taskCheckBox_";
         private string defaultTextBoxText = "Enter Task";
+        private string defaultDurationTextBoxText = "Duration";
         private string interval = "";
         private string hour = "hour";
         private string min = "min";
+        private string sec = "sec";
         private string intervalLabelText = "Interval Ends";
+        private string intervalStartLabelText = "Interval Started";
         private string messageLabelText = "Message: ";
 
         private Timer timer1;
+
+        //itnerval TImer history
+        private List<string> intervalHistory = new List<string>();
 
         public enum messageType
         {
             negative = -1,
             neutral = 0,
             positive = 1,
+            messageBox = 2,
         };
 
         public Form1()
@@ -69,22 +80,74 @@ namespace ScheduleManager
             this.loadInterval();
             this.getTodaysTask();
 
+            //PowerModeChanged();
+
             start_end_button.Text = (!this.timerActive) ? "Start" : "End";
         }
+
+
 
         public void initDB()
         {
             this.dbCon = DBConnection.Instance();
             this.dbCon.DatabaseName = this.DBName;
+            if (!dbCon.IsConnect())
+            {
+                MessageBox.Show("Connection to DB could not be made, Exiting.");
+                Environment.Exit(0);
+                Application.Exit();
+            }
         }
 
+        private void PowerModeChanged()
+        {
+            SystemEvents.PowerModeChanged += (object s, PowerModeChangedEventArgs e) => {
+                switch (e.Mode)
+                {
+                    case PowerModes.Resume:
+                        // show application
+                        MessageBox.Show("App Resumed");
+                        if (FormWindowState.Minimized == this.WindowState)
+                        {
+                            mynotifyicon.Visible = false;
+                            this.ShowInTaskbar = false;
+
+                            this.Show();
+                        }
+
+                        break;
+                    case PowerModes.Suspend:
+                        // pause timer
+                        this.timerActive = false;
+
+                        start_end_button.Text = "Start";
+
+                        if (timer1 != null)
+                        {
+                            timer1.Enabled = false;
+                        }
+
+                        this.showMessage("System Suspended. Timer Deactived", messageType.positive);
+                        break;
+                }
+            };
+        }
         private void loadInterval()
         {
+            //get time interval from db
             var data = DBHelper.Get(this.dbCon, "duration", limit: 1, orderBy: "id DESC");
-            this.interval = data[0]["time"];
-            this.interval += " " + data[0]["type"];
+            if(data.Keys.Count > 0)
+            {
+                this.interval = data[0]["time"];
+                this.interval += " " + data[0]["type"];
 
-            timer_label.Text = this.interval;
+                timer_label.Text = this.interval;
+            }
+            else
+            {
+                showMessage("No saved interval.", messageType.messageBox);
+            }
+            
         }
 
         private void getTodaysTask()
@@ -94,12 +157,9 @@ namespace ScheduleManager
             if (data.Keys.Count > 0)
             {
                 var keys = data.Keys;
-                int counter = 0;
+                // count the number of children in the active_task control
+                int counter = active_task.Controls.Count;
 
-                if (tasksLabelList.Count > 0)
-                {
-                    counter = tasksLabelList.Count;
-                }
 
                 foreach (var key in keys)
                 {
@@ -131,7 +191,11 @@ namespace ScheduleManager
 
                     Button deactivateButton = new Button();
                     deactivateButton.Text = (data[key]["current"] == "0") ? "Activate" : "Deactivate";
-                    deactivateButton.Tag = data[key]["active"];
+                    deactivateButton.Tag = data[key]["current"];
+
+                    Button turnOffButton = new Button();
+                    turnOffButton.Text = (data[key]["active"] == "0") ? "Turn On" : "Turn Off";
+                    turnOffButton.Tag = data[key]["active"];
 
                     //Label activeLabel = new Label() { Margin = new Padding(0, 7, 0, 0) };
                     //activeLabel.Text = (data[key]["current"] == "0") ? "Inactive" : "Active" ;
@@ -143,23 +207,41 @@ namespace ScheduleManager
                         this.activateTask(Convert.ToInt32(taskId));
                     };
 
+                    turnOffButton.Click += delegate
+                    {
+                        var taskId = id;
+                        var status = this.tasksActiveStateButtonList[taskId].Tag.ToString();
+                        status = (status == "0") ? "1" : "0";
+                        
+                        //deactivate/activate task
+                        Tasks.toggleTaskActiveStatus(this.dbCon, taskId, status);
+
+                        this.tasksActiveStateButtonList[taskId].Text = (status == "0") ? "Turn On" : "Turn Off";
+                        this.tasksActiveStateButtonList[taskId].Tag = status;
+
+                        // show message to user
+                        this.showMessage(status == "1" ? "Task Activated" : "Task Deactivated", messageType.positive);
+                    };
+
                     flowLayoutPanel.Controls.Add(taskCounter);
                     flowLayoutPanel.Controls.Add(taskTitle);
                     flowLayoutPanel.Controls.Add(deactivateButton);
+                    flowLayoutPanel.Controls.Add(turnOffButton);
                     //flowLayoutPanel.Controls.Add(activeLabel);
 
                     //tasksActiveInactiveLabelList.Add(Convert.ToInt32(data[key]["id"]), activeLabel);
-                    
+
                     tasksButtonList.Add(id, deactivateButton);
                     tasksLabelList.Add(id, taskTitle);
+                    tasksActiveStateButtonList.Add(id, turnOffButton);
 
                     active_task.Controls.Add(flowLayoutPanel);
 
                     //set active
                     if (data[key]["current"] == "1" && this.currentTaskId == -1)
                     {
-                        this.currentTaskId = id;
-                        this.activateTask(this.currentTaskId);
+
+                        this.activateTask(id);
                     }
                 }
 
@@ -171,7 +253,11 @@ namespace ScheduleManager
                     //this.currentTaskId = id;
                     //this.tasksActiveInactiveLabelList[id].Text = "Active";
                     this.activateTask(id);
+
                 }
+
+                //empty "checkBoxList" as it's used to track newly created tasks
+                this.checkBoxList.Clear();
             }
             else
             {
@@ -179,35 +265,35 @@ namespace ScheduleManager
             }
         }
 
-        private void activateTask(int id, string source="button")
+        private void activateTask(int id, string source="button", int oldTaskId = -1)
         {
-            var updateData = new Dictionary<string, string>();
-            
+            Tasks.setCurrentTask(this.dbCon, this.currentTaskId, id);
+
+            //if oldTaskId is not -1, a forced deactivation of said ID would occur
             if (this.currentTaskId > 0)
             {
-                //deactivate previous
+                int currentId = (oldTaskId == -1) ? this.currentTaskId : oldTaskId;
+                
+                //    //deactivate previous
                 //this.tasksActiveInactiveLabelList[this.currentTaskId].Text = "Inactive";
-                this.tasksButtonList[this.currentTaskId].Text = "Activate";
-                this.tasksButtonList[this.currentTaskId].Tag = "0";
-                this.tasksLabelList[this.currentTaskId].Font =new Font(this.tasksLabelList[this.currentTaskId].Font, FontStyle.Regular);
-    
-                updateData.Add("current", "0");
-                DBHelper.Update(this.dbCon, "tasks", updateData, "id=" + this.currentTaskId);
+                this.tasksButtonList[currentId].Text = "Activate";
+                this.tasksButtonList[currentId].Tag = "0";
+                this.tasksLabelList[currentId].Font = new Font(this.tasksLabelList[currentId].Font, FontStyle.Regular);
+
+            }
+
+            if (oldTaskId == -1)
+            {
+                //activate current
+                this.currentTaskId = id;
+                //this.tasksActiveInactiveLabelList[id].Text = "Active";
+                this.tasksButtonList[id].Text = "Deactivate";
+                this.tasksButtonList[id].Tag = "1";
+                this.tasksLabelList[id].Font = new Font(this.tasksLabelList[id].Font, FontStyle.Bold);
+                active_task_label.Text = this.tasksLabelList[id].Text;
             }
             
 
-            //activate current
-            this.currentTaskId = id;
-            //this.tasksActiveInactiveLabelList[id].Text = "Active";
-            this.tasksButtonList[id].Text = "Deactivate";
-            this.tasksButtonList[id].Tag = "1";
-            this.tasksLabelList[id].Font = new Font(this.tasksLabelList[id].Font, FontStyle.Bold);
-            active_task_label.Text = this.tasksLabelList[id].Text;
-
-
-            updateData = new Dictionary<string, string>();
-            updateData.Add("current", "1");
-            DBHelper.Update(this.dbCon, "tasks", updateData, "id=" + id);
 
             if (source != "button") this.showMessage("Task Activated.", messageType.positive);
 
@@ -227,6 +313,9 @@ namespace ScheduleManager
                 case messageType.positive:
                     message_label.ForeColor = Color.Green;
                     break;
+                case messageType.messageBox:
+                    MessageBox.Show(message);
+                    break;
             }
         }
 
@@ -235,8 +324,7 @@ namespace ScheduleManager
             int componentId = this.componentId;
 
             FlowLayoutPanel flowLayoutPanel = new FlowLayoutPanel();
-            //flowLayoutPanel.BackColor = Color.Beige;
-            flowLayoutPanel.Width = 350;
+            flowLayoutPanel.Width = 450;
             flowLayoutPanel.Height = 30;
             flowLayoutPanel.Tag = componentId;
             flowLayoutPanel.Anchor = AnchorStyles.Left;
@@ -254,9 +342,7 @@ namespace ScheduleManager
                 if (this.defaultTextBoxText == textBox.Text)
                 {
                     textBox.Text = "";
-                }
-
-                
+                }  
             };
             textBox.Leave += delegate
             {
@@ -265,7 +351,27 @@ namespace ScheduleManager
                     textBox.Text = this.defaultTextBoxText;
                 }
             };
-            
+
+            NumericUpDown durationTextBox = new NumericUpDown();
+            durationTextBox.Name = this.durationTextBoxName + componentId;
+            durationTextBox.Text = this.defaultDurationTextBoxText;
+            durationTextBox.Width = 60;
+
+            durationTextBox.GotFocus += delegate {
+                if (this.defaultDurationTextBoxText == durationTextBox.Text)
+                {
+                    durationTextBox.Text = "";
+                }
+            };
+
+            durationTextBox.Leave += delegate
+            {
+                if (durationTextBox.Text == "")
+                {
+                    durationTextBox.Text = this.defaultDurationTextBoxText;
+                }
+            };
+
             CheckBox checkBox = new CheckBox();
             checkBox.Name = this.checkBoxName + componentId;
             checkBox.Text = "In Between";
@@ -289,6 +395,7 @@ namespace ScheduleManager
 
             Button removeButton = new Button();
             removeButton.Text = "Remove";
+            removeButton.Width = 60;
             removeButton.Click += delegate 
             {
                 //MessageBox.Show("Deleting..." + componentId);
@@ -307,12 +414,14 @@ namespace ScheduleManager
                     this.checkBoxList.Remove(componentId);
                     this.labelList.Remove(componentId);
                     this.textBoxList.Remove(componentId);
+                    this.durationTextBoxList.Remove(componentId);
                 }
                 
             };
 
             flowLayoutPanel.Controls.Add(label);
             flowLayoutPanel.Controls.Add(textBox);
+            //flowLayoutPanel.Controls.Add(durationTextBox);
             flowLayoutPanel.Controls.Add(checkBox);
             flowLayoutPanel.Controls.Add(removeButton);
 
@@ -322,6 +431,7 @@ namespace ScheduleManager
             this.labelList.Add(componentId, label);
             this.textBoxList.Add(componentId, textBox);
             this.buttonList.Add(componentId, removeButton);
+            this.durationTextBoxList.Add(componentId, durationTextBox);
 
             form_panel.Controls.Add(flowLayoutPanel);
             
@@ -338,12 +448,19 @@ namespace ScheduleManager
             
                 foreach (var key in keys)
                 {
+                    if (this.textBoxList[key].Text == this.defaultTextBoxText) continue;
+
                     var dict = new Dictionary<string, string>();
                     dict.Add("task", this.textBoxList[key].Text);
                     dict.Add("in_between", ((this.isInBetweenChecked && this.checkBoxList[key].Checked) ? 1 : 0).ToString());
                     dict.Add("created_at", DateTime.Today.ToString("yyyy-MM-dd"));
                     dict.Add("active", "1");
                     dict.Add("current", "0");
+                    if (this.durationTextBoxList[key].Text != this.defaultDurationTextBoxText)
+                    {
+                        // task has a custom duration
+                        //dict.Add("duration", );
+                    }
 
 
                     DBHelper.Insert(this.dbCon, "tasks", dict);
@@ -380,27 +497,41 @@ namespace ScheduleManager
 
             FlowLayoutPanel flowLayoutPanel = new FlowLayoutPanel() { Left = 50, Top = 70};
             
-            flowLayoutPanel.Width = 150;
+            flowLayoutPanel.Width = 200;
             flowLayoutPanel.Height = 30;
             flowLayoutPanel.Tag = componentId;
             flowLayoutPanel.Anchor = AnchorStyles.Left;
 
+            CheckBox secCheckBox = new CheckBox();
+            secCheckBox.Text = this.sec;
+            secCheckBox.Height = 30;
+            secCheckBox.Width = 45;
+            secCheckBox.Checked = false;
+
             CheckBox minCheckBox = new CheckBox();
             minCheckBox.Text = this.min;
             minCheckBox.Height = 30;
-            minCheckBox.Width = 65;
+            minCheckBox.Width = 45;
             minCheckBox.Checked = true;
             
 
             CheckBox hourCheckBox = new CheckBox();
             hourCheckBox.Text = this.hour;
             hourCheckBox.Height = 30;
-            hourCheckBox.Width = 65;
+            hourCheckBox.Width = 50;
+
+            secCheckBox.Click += delegate
+            {
+                hourCheckBox.Checked = false;
+                minCheckBox.Checked = false;
+                secCheckBox.Checked = true;
+            };
 
             minCheckBox.Click += delegate 
             {
                 hourCheckBox.Checked = false;
                 minCheckBox.Checked = true;
+                secCheckBox.Checked = false;
             };
 
 
@@ -408,6 +539,7 @@ namespace ScheduleManager
             {
                 hourCheckBox.Checked = true;
                 minCheckBox.Checked = false;
+                secCheckBox.Checked = false;
             };
 
             confirmation.Click += (sender, e) =>
@@ -430,7 +562,8 @@ namespace ScheduleManager
                 prompt.Close();
             };
 
-
+            
+            flowLayoutPanel.Controls.Add(secCheckBox);
             flowLayoutPanel.Controls.Add(minCheckBox);
             flowLayoutPanel.Controls.Add(hourCheckBox);
 
@@ -439,7 +572,6 @@ namespace ScheduleManager
             prompt.Controls.Add(textLabel);
             prompt.Controls.Add(inputBox);
             prompt.Controls.Add(flowLayoutPanel);
-
 
             prompt.FormClosing += (s, ev) => 
             {
@@ -464,6 +596,11 @@ namespace ScheduleManager
             this.ShowCustomDialog("caption");
         }
 
+        public double ConvertSecondsToMilliseconds(double seconds)
+        {
+            return TimeSpan.FromSeconds(seconds).TotalMilliseconds;
+        }
+
         public double ConvertMinutesToMilliseconds(double minutes)
         {
             return TimeSpan.FromMinutes(minutes).TotalMilliseconds;
@@ -472,6 +609,21 @@ namespace ScheduleManager
         public double ConvertHoursToMilliseconds(double hours)
         {
             return TimeSpan.FromHours(hours).TotalMilliseconds;
+        }
+
+        private int getNextTaskId()
+        {
+            //get list of all ids 
+            var ids = this.tasksLabelList.Keys.ToList();
+            int indexOfCurrentId = ids.IndexOf(this.currentTaskId);
+            int nextId = ids[0];
+
+            if ((indexOfCurrentId + 1) < ids.Count)
+            {
+                nextId = ids[(indexOfCurrentId + 1)];
+            }
+
+            return nextId;
         }
 
         private void intervalCheck()
@@ -493,14 +645,21 @@ namespace ScheduleManager
                 DBHelper.Update(this.dbCon, "tasks", updateData, "id=" + this.currentTaskId);
 
                 // update db set current active to next
-                //get list of all ids 
-                var ids = this.tasksLabelList.Keys.ToList();
-                int indexOfCurrentId = ids.IndexOf(this.currentTaskId);
-                int nextId = ids[0];
+                int nextId = getNextTaskId();
 
-                if ((indexOfCurrentId + 1) < ids.Count)
+                for (; ; )
                 {
-                    nextId = ids[(indexOfCurrentId + 1)];
+                    if (this.tasksActiveStateButtonList[nextId].Tag.ToString() == "0")
+                    {
+                        // make checks, next task is deactivated skip
+                        this.activateTask(-1, oldTaskId: this.currentTaskId);
+                        this.currentTaskId = nextId;
+                        nextId = getNextTaskId();
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
 
 
@@ -525,7 +684,9 @@ namespace ScheduleManager
             double intervalDuration = Convert.ToInt32(interval[0]);
 
             // for due time
-            DateTime dateTime1;
+            DateTime dateTime1 = DateTime.Now;
+            var startingTime = DateTime.Now.ToShortTimeString();
+            timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime;
 
             if (interval[1] == this.hour)
             {
@@ -550,7 +711,20 @@ namespace ScheduleManager
                     due_time_label.Text = this.intervalLabelText;
             }
 
+            if (interval[1] == this.sec)
+            {
+                dateTime1 = DateTime.Now.AddSeconds(Convert.ToInt32(intervalDuration));
+                intervalDuration = Convert.ToInt32(this.ConvertSecondsToMilliseconds(intervalDuration));
+
+                if (this.timerActive)
+                    due_time_label.Text = this.intervalLabelText + " - " + dateTime1.ToShortTimeString();
+                else
+                    due_time_label.Text = this.intervalLabelText;
+            }
+
             this.intervalDuration = intervalDuration;
+
+            if (this.timerActive)  intervalHistory.Add(string.Format("Started At: {0} - Ending At: {1}", startingTime, dateTime1.ToShortTimeString()));
 
             //update timer interval
             if (timer1 != null) timer1.Interval = Convert.ToInt32(this.intervalDuration);
@@ -604,9 +778,12 @@ namespace ScheduleManager
         {
             if (FormWindowState.Minimized == this.WindowState)
             {
+                mynotifyicon.BalloonTipText = active_task_label.Text;
                 mynotifyicon.Visible = true;
                 mynotifyicon.ShowBalloonTip(500);
+
                 this.ShowInTaskbar = true;
+
                 this.Hide();
             }
 
@@ -631,6 +808,33 @@ namespace ScheduleManager
         {
             this.Show();
             this.WindowState = FormWindowState.Normal;
+        }
+
+        private void interval_history_Click(object sender, EventArgs e)
+        {
+            Form prompt = new Form();
+            prompt.Width = 250;
+            prompt.Height = 250;
+            prompt.Text = "Interval History";
+
+            FlowLayoutPanel flowLayoutPanel = new FlowLayoutPanel() { Top = 10 };
+
+            flowLayoutPanel.Width = 250;
+            flowLayoutPanel.Height = 30;
+            flowLayoutPanel.Tag = componentId;
+            flowLayoutPanel.Anchor = AnchorStyles.Bottom;
+            flowLayoutPanel.Dock = DockStyle.Fill;
+
+            intervalHistory.ForEach((item) => 
+            {
+                Label label = new Label() { Text = item, Width=230 };
+
+                flowLayoutPanel.Controls.Add(label);
+            });
+
+            prompt.Controls.Add(flowLayoutPanel);
+
+            prompt.ShowDialog();
         }
     }
 

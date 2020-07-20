@@ -261,10 +261,8 @@ namespace ScheduleManager
 
                     //while (reader.Read())
                     //{
-                    //    string someStringFromColumnZero = reader.GetString("");
-                        
-                    //    data.Add("", reader.GetString(""));
                     //    string someStringFromColumnOne = reader.GetString(1);
+                    //    System.Windows.Forms.MessageBox.Show("Query - " + query + " - Value - " + someStringFromColumnOne);
                     //}
                 }
                 catch (Exception e)

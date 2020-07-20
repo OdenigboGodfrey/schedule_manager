@@ -41,13 +41,26 @@ namespace ScheduleManager
         {
             if (Connection == null)
             {
-                if (String.IsNullOrEmpty(databaseName)) return false;
-                String connstring = String.Format("Server=localhost; database='" + DatabaseName + "'; UID=root; password=");
-                connection = new MySqlConnection(connstring);
-                connection.Open();
-            }
+                try
+                {
+                    
+                    if (String.IsNullOrEmpty(databaseName)) return false;
+                    
+                    String connstring = String.Format("Server=localhost; database='" + databaseName + "'; UID=root; password=");
+                    connection = new MySqlConnection(connstring);
+                    connection.Open();
 
-            return true;
+                    return true;
+                }
+                catch (MySqlException ex)
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return true;
+            }
         }
 
         public void Close()
