@@ -32,6 +32,9 @@ namespace ScheduleManager
         private Dictionary<int, Button> tasksButtonList = new Dictionary<int, Button>();
         private Dictionary<int, Button> tasksActiveStateButtonList = new Dictionary<int, Button>();
 
+        //itnerval TImer history
+        private List<string> intervalHistory = new List<string>();
+
         private double intervalDuration = 0;
 
         private DBConnection dbCon;
@@ -56,8 +59,9 @@ namespace ScheduleManager
 
         private Timer timer1;
 
-        //itnerval TImer history
-        private List<string> intervalHistory = new List<string>();
+        DateTime dueTime;
+
+        
 
         public enum messageType
         {
@@ -80,7 +84,7 @@ namespace ScheduleManager
             this.loadInterval();
             this.getTodaysTask();
 
-            //PowerModeChanged();
+            //powerModeChanged();
 
             start_end_button.Text = (!this.timerActive) ? "Start" : "End";
         }
@@ -99,7 +103,7 @@ namespace ScheduleManager
             }
         }
 
-        private void PowerModeChanged()
+        private void powerModeChanged()
         {
             SystemEvents.PowerModeChanged += (object s, PowerModeChangedEventArgs e) => {
                 switch (e.Mode)
@@ -107,12 +111,11 @@ namespace ScheduleManager
                     case PowerModes.Resume:
                         // show application
                         MessageBox.Show("App Resumed");
+                        // move from taskbar to main screen 
                         if (FormWindowState.Minimized == this.WindowState)
                         {
-                            mynotifyicon.Visible = false;
-                            this.ShowInTaskbar = false;
-
                             this.Show();
+                            this.WindowState = FormWindowState.Normal;
                         }
 
                         break;
@@ -684,51 +687,88 @@ namespace ScheduleManager
             double intervalDuration = Convert.ToInt32(interval[0]);
 
             // for due time
-            DateTime dateTime1 = DateTime.Now;
+            dueTime = DateTime.Now;
             var startingTime = DateTime.Now.ToShortTimeString();
-            timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime;
+
+            if (this.timerActive)
+            {
+                timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime;
+                due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
+            }
+            else
+            {
+                timer_start_label.Text = this.intervalStartLabelText;
+                due_time_label.Text = this.intervalLabelText;
+
+                return;
+            }
+
 
             if (interval[1] == this.hour)
             {
-                dateTime1 = DateTime.Now.AddHours(Convert.ToInt32(intervalDuration));
+                dueTime = DateTime.Now.AddHours(Convert.ToInt32(intervalDuration));
                 intervalDuration = Convert.ToInt32(this.ConvertHoursToMilliseconds(intervalDuration));
-                due_time_label.Text = dateTime1.ToShortTimeString();
-
-                if (this.timerActive)
-                    due_time_label.Text = this.intervalLabelText + " - " + dateTime1.ToShortTimeString();
-                else
-                    due_time_label.Text = this.intervalLabelText;
+                //due_time_label.Text = dueTime.ToShortTimeString();
+                    
             }
 
             if (interval[1] == this.min)
             {
-                dateTime1 = DateTime.Now.AddMinutes(Convert.ToInt32(intervalDuration));
+                dueTime = DateTime.Now.AddMinutes(Convert.ToInt32(intervalDuration));
                 intervalDuration = Convert.ToInt32(this.ConvertMinutesToMilliseconds(intervalDuration));
 
-                if (this.timerActive)
-                    due_time_label.Text = this.intervalLabelText + " - " + dateTime1.ToShortTimeString();
-                else
-                    due_time_label.Text = this.intervalLabelText;
+                //if (this.timerActive)
+                //{
+                //    timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime;
+                //    due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
+                //}
+                //else
+                //{
+                //    timer_start_label.Text = this.intervalStartLabelText;
+                //    due_time_label.Text = this.intervalLabelText;
+                //}
+                    
             }
 
             if (interval[1] == this.sec)
             {
-                dateTime1 = DateTime.Now.AddSeconds(Convert.ToInt32(intervalDuration));
+                dueTime = DateTime.Now.AddSeconds(Convert.ToInt32(intervalDuration));
                 intervalDuration = Convert.ToInt32(this.ConvertSecondsToMilliseconds(intervalDuration));
 
-                if (this.timerActive)
-                    due_time_label.Text = this.intervalLabelText + " - " + dateTime1.ToShortTimeString();
-                else
-                    due_time_label.Text = this.intervalLabelText;
+                //if (this.timerActive)
+                //    due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
+                //else
+                //    due_time_label.Text = this.intervalLabelText;
             }
+
+            
 
             this.intervalDuration = intervalDuration;
 
-            if (this.timerActive)  intervalHistory.Add(string.Format("Started At: {0} - Ending At: {1}", startingTime, dateTime1.ToShortTimeString()));
+            if (this.timerActive)  intervalHistory.Add(string.Format("Started At: {0} - Ending At: {1}", startingTime, dueTime.ToShortTimeString()));
 
             //update timer interval
             if (timer1 != null) timer1.Interval = Convert.ToInt32(this.intervalDuration);
 
+        }
+
+        private void pause_button_Click(object sender, EventArgs e)
+        {
+            //if timer is running -> get length to next stop
+            //-on resume timer is set to run till end of remaining time
+            //-on end of remaining time, reset interval to default from db
+
+            if (this.timerActive)
+            {
+                var currentDateTime = DateTime.Now;
+                //get difference between now and dueTime
+                var dateTimeDiff = dueTime.Subtract(currentDateTime);
+                showMessage(dateTimeDiff.TotalMinutes.ToString(), messageType.neutral);
+                this.timerActive = false;
+                timer1.Stop();
+                timer1.Enabled = false;
+                
+            }
         }
 
         private void start_end_button_Click(object sender, EventArgs e)
@@ -747,12 +787,15 @@ namespace ScheduleManager
 
             if (this.timerActive)
             {
+                timer1.Start();
                 timer1.Enabled = true;
                 this.showMessage("Timer Active", messageType.neutral);
             }
             else
             {
+                timer1.Stop();
                 timer1.Enabled = false;
+                
                 this.showMessage("Timer Deactived", messageType.positive);
             }
 
@@ -763,11 +806,16 @@ namespace ScheduleManager
                 if (!this.timerActive)
                 {
                     timer1.Stop();
-                    //MessageBox.Show("Timer Stopped");
+                    MessageBox.Show("Timer Stopped");
                 }
                 else
                 {
+                    //if ()
+                    //{
+
+                    //}
                     this.intervalCheck();
+                    MessageBox.Show("Timer Interval Reached");
                 }
 
                 counter++;
@@ -836,6 +884,8 @@ namespace ScheduleManager
 
             prompt.ShowDialog();
         }
+
+        
     }
 
     

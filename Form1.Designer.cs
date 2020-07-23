@@ -34,6 +34,7 @@
             this.panel8 = new System.Windows.Forms.Panel();
             this.active_task = new System.Windows.Forms.FlowLayoutPanel();
             this.panel9 = new System.Windows.Forms.Panel();
+            this.timer_start_label = new System.Windows.Forms.Label();
             this.due_time_label = new System.Windows.Forms.Label();
             this.label3 = new System.Windows.Forms.Label();
             this.panel6 = new System.Windows.Forms.Panel();
@@ -43,6 +44,8 @@
             this.add_task = new System.Windows.Forms.Button();
             this.label5 = new System.Windows.Forms.Label();
             this.panel3 = new System.Windows.Forms.Panel();
+            this.interval_history = new System.Windows.Forms.Button();
+            this.message_label = new System.Windows.Forms.Label();
             this.change_timer = new System.Windows.Forms.Button();
             this.timer_label = new System.Windows.Forms.Label();
             this.pause_button = new System.Windows.Forms.Button();
@@ -55,9 +58,6 @@
             this.panel5 = new System.Windows.Forms.Panel();
             this.label2 = new System.Windows.Forms.Label();
             this.mynotifyicon = new System.Windows.Forms.NotifyIcon(this.components);
-            this.timer_start_label = new System.Windows.Forms.Label();
-            this.message_label = new System.Windows.Forms.Label();
-            this.interval_history = new System.Windows.Forms.Button();
             this.panel2.SuspendLayout();
             this.panel8.SuspendLayout();
             this.panel9.SuspendLayout();
@@ -112,6 +112,15 @@
             this.panel9.Name = "panel9";
             this.panel9.Size = new System.Drawing.Size(518, 32);
             this.panel9.TabIndex = 0;
+            // 
+            // timer_start_label
+            // 
+            this.timer_start_label.AutoSize = true;
+            this.timer_start_label.Location = new System.Drawing.Point(184, 8);
+            this.timer_start_label.Name = "timer_start_label";
+            this.timer_start_label.Size = new System.Drawing.Size(79, 13);
+            this.timer_start_label.TabIndex = 7;
+            this.timer_start_label.Text = "Interval Started";
             // 
             // due_time_label
             // 
@@ -207,6 +216,26 @@
             this.panel3.Size = new System.Drawing.Size(1064, 45);
             this.panel3.TabIndex = 4;
             // 
+            // interval_history
+            // 
+            this.interval_history.Location = new System.Drawing.Point(303, 10);
+            this.interval_history.Name = "interval_history";
+            this.interval_history.Size = new System.Drawing.Size(74, 23);
+            this.interval_history.TabIndex = 13;
+            this.interval_history.Text = "View History";
+            this.interval_history.UseVisualStyleBackColor = true;
+            this.interval_history.Click += new System.EventHandler(this.interval_history_Click);
+            // 
+            // message_label
+            // 
+            this.message_label.AutoSize = true;
+            this.message_label.ForeColor = System.Drawing.Color.Black;
+            this.message_label.Location = new System.Drawing.Point(681, 20);
+            this.message_label.Name = "message_label";
+            this.message_label.Size = new System.Drawing.Size(115, 13);
+            this.message_label.TabIndex = 12;
+            this.message_label.Text = "Message: No message";
+            // 
             // change_timer
             // 
             this.change_timer.Location = new System.Drawing.Point(158, 12);
@@ -234,7 +263,7 @@
             this.pause_button.TabIndex = 7;
             this.pause_button.Text = "Pause";
             this.pause_button.UseVisualStyleBackColor = true;
-            this.pause_button.Visible = false;
+            this.pause_button.Click += new System.EventHandler(this.pause_button_Click);
             // 
             // start_end_button
             // 
@@ -326,35 +355,6 @@
             this.mynotifyicon.Click += new System.EventHandler(this.mynotifyicon_Click);
             this.mynotifyicon.MouseDoubleClick += new System.Windows.Forms.MouseEventHandler(this.mynotifyicon_MouseDoubleClick);
             this.mynotifyicon.MouseMove += new System.Windows.Forms.MouseEventHandler(this.mynotifyicon_MouseMove);
-            // 
-            // timer_start_label
-            // 
-            this.timer_start_label.AutoSize = true;
-            this.timer_start_label.Location = new System.Drawing.Point(184, 8);
-            this.timer_start_label.Name = "timer_start_label";
-            this.timer_start_label.Size = new System.Drawing.Size(79, 13);
-            this.timer_start_label.TabIndex = 7;
-            this.timer_start_label.Text = "Interval Started";
-            // 
-            // message_label
-            // 
-            this.message_label.AutoSize = true;
-            this.message_label.ForeColor = System.Drawing.Color.Black;
-            this.message_label.Location = new System.Drawing.Point(681, 20);
-            this.message_label.Name = "message_label";
-            this.message_label.Size = new System.Drawing.Size(115, 13);
-            this.message_label.TabIndex = 12;
-            this.message_label.Text = "Message: No message";
-            // 
-            // interval_history
-            // 
-            this.interval_history.Location = new System.Drawing.Point(303, 10);
-            this.interval_history.Name = "interval_history";
-            this.interval_history.Size = new System.Drawing.Size(74, 23);
-            this.interval_history.TabIndex = 13;
-            this.interval_history.Text = "View History";
-            this.interval_history.UseVisualStyleBackColor = true;
-            this.interval_history.Click += new System.EventHandler(this.interval_history_Click);
             // 
             // Form1
             // 
