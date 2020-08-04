@@ -13,20 +13,24 @@ namespace ScheduleManager
         {
             var dbCon = dBConnection;
 
-            Dictionary<string, Dictionary<string, string>> tables = new Dictionary<string, Dictionary<string,string>>();
+            Dictionary<string, Dictionary<string, List<string>>> tables = new Dictionary<string, Dictionary<string, List<string>>>();
 
-            Dictionary<string, string> duration = new Dictionary<string, string>();
-            duration.Add("time", "int");
-            duration.Add("type", "text");
-            duration.Add("created_at", "timestamp");
+            Dictionary<string, List<string>> duration = new Dictionary<string, List<string>>();
+            // list format [0 => type, 1 => len, 2 => nullable]
+            duration.Add("time", new List<string> { "int", "11", "" });
+            duration.Add("type", new List<string> { "text", "", "" });
+            duration.Add("created_at", new List<string> { "timestamp", "", "" });
+            duration.Add("task_id", new List<string> { "bigint", "20", "NULL" });
 
 
-            Dictionary<string, string> tasks = new Dictionary<string, string>();
-            duration.Add("task", "text");
-            duration.Add("created", "timestamp");
-            duration.Add("in_between", "tinyint");
-            duration.Add("active", "tinyint");
-            duration.Add("current", "tinyint");
+            Dictionary<string, List<string>> tasks = new Dictionary<string, List<string>>();
+
+            tasks.Add("task", new List<string> { "text", "", "" });
+            tasks.Add("created_at", new List<string> { "timestamp", "", "" });
+            tasks.Add("in_between", new List<string> { "tinyint", "", "" });
+            tasks.Add("active", new List<string> { "tinyint", "", "" });
+            tasks.Add("current", new List<string> { "tinyint", "", "" });
+
 
             tables.Add("duration", duration);
             tables.Add("tasks", tasks);
@@ -77,7 +81,7 @@ namespace ScheduleManager
             }
         }
 
-        public static void CreateTable(DBConnection dBConnection, string tableName, Dictionary<string, string> data)
+        public static void CreateTable(DBConnection dBConnection, string tableName, Dictionary<string, List<string>> data)
         {
             var dbCon = dBConnection;
 
@@ -85,6 +89,7 @@ namespace ScheduleManager
             if (dbCon.IsConnect())
             {
                 //string.Format("Server=localhost; database={0}; UID=UserName; password=your password", "");
+                // list format [0 => type, 1 => len, 2 => nullable]
                 string query = "CREATE TABLE " + tableName + " ( id INT(11) UNSIGNED AUTO_INCREMENT PRIMARY KEY,";
 
                 var keys = data.Keys.ToArray();
@@ -92,23 +97,30 @@ namespace ScheduleManager
                 for (int i = 1; i <= keys.Count(); i++)
                 {
                     string key = keys[i - 1];
-                    string colunmType = data[key].ToUpper();
-                    if (colunmType == "INT")
+                    string columnType = data[key][0].ToUpper();
+                    
+                    if (data[key][1] != "")
                     {
-                        colunmType += "(11)";
+                        // column length
+                        columnType += "(" + data[key][1] + ") ";
                     }
 
-                        if (i < keys.Count())
+                    if (data[key][2] != "")
                     {
-                        query += key + " " + colunmType + ",";
+                        //nullable
+                        columnType += "" + data[key][2] + " ";
+                    }
+
+
+                    if (i < keys.Count())
+                    {
+                        query += key + " " + columnType + ",";
                     }
                     else
                     {
-                        query += key + " " + colunmType + ")";
+                        query += key + " " + columnType + ")";
                     }
                 }
-
-                
 
                 var cmd = new MySqlCommand(query, dbCon.Connection);
                 cmd.ExecuteNonQuery();
@@ -120,7 +132,6 @@ namespace ScheduleManager
         public static void Insert(DBConnection dBConnection, string tableName, Dictionary<string,string> data)
         {
             var dbCon = dBConnection;
-            
 
             if (dbCon.IsConnect())
             {
@@ -157,11 +168,11 @@ namespace ScheduleManager
                     }
                 }
 
-                
                 var cmd = new MySqlCommand(query, dbCon.Connection);
-                cmd.ExecuteNonQuery();
-                //dbCon.Close();
 
+                cmd.ExecuteNonQuery();                
+
+                //dbCon.Close();
             }
         }
 
@@ -241,6 +252,8 @@ namespace ScheduleManager
                         rowCount = limit;
                     }
 
+                    
+
                     MySqlCommand cmd = new MySqlCommand(query, dbCon.Connection);
                     reader = cmd.ExecuteReader();
 
@@ -253,8 +266,17 @@ namespace ScheduleManager
 
                             for (int i = 0; i < fieldCount; i++)
                             {
-                                data[j].Add(reader.GetName(i), reader.GetString(i));
+                                if (!reader.IsDBNull(i))
+                                {
+                                    //column has a null value
+                                    data[j].Add(reader.GetName(i), reader.GetString(i));
+                                }
+                                else
+                                {
+                                    data[j].Add(reader.GetName(i), "");
+                                }
                             }
+
                             if (rowCount > 1) reader.Read();
                         }
                     }
@@ -267,7 +289,7 @@ namespace ScheduleManager
                 }
                 catch (Exception e)
                 {
-                    System.Windows.Forms.MessageBox.Show(e.Message);
+                    System.Windows.Forms.MessageBox.Show( e.Message);
                 }
                 finally
                 {

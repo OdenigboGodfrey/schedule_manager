@@ -244,6 +244,7 @@
             this.change_timer.TabIndex = 11;
             this.change_timer.Text = "Change Default Timer";
             this.change_timer.UseVisualStyleBackColor = true;
+            this.change_timer.Click += new System.EventHandler(this.change_timer_Click);
             // 
             // timer_label
             // 
@@ -350,7 +351,7 @@
             // 
             this.mynotifyicon.BalloonTipText = "Schedule Manager";
             this.mynotifyicon.Icon = ((System.Drawing.Icon)(resources.GetObject("mynotifyicon.Icon")));
-            this.mynotifyicon.Text = "notifyIcon1";
+            this.mynotifyicon.Text = "Schedule Manager";
             this.mynotifyicon.Visible = true;
             this.mynotifyicon.Click += new System.EventHandler(this.mynotifyicon_Click);
             this.mynotifyicon.MouseDoubleClick += new System.Windows.Forms.MouseEventHandler(this.mynotifyicon_MouseDoubleClick);

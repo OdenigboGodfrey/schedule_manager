@@ -133,6 +133,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="schedule_icon.ico" />
+    <Content Include="todo.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

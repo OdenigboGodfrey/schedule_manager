@@ -18,19 +18,28 @@ namespace ScheduleManager
 
         private int componentId = 0;
         private int currentTaskId = -1;
+        //id for task to be loaded in between intervals
+        private int inBetweenId = -1;
+        //id for task loaded before in-between task
+        private int taskIdBeforeInBetweenId = -1;
         
+        //duration value from setting timer
+        int durationValue { set => durationValue = value; get => getDurationValue(durationValue); }
+
         //adding new task
         private Dictionary<int, CheckBox> checkBoxList = new Dictionary<int, CheckBox>();
         private Dictionary<int, TextBox> textBoxList = new Dictionary<int, TextBox>();
         private Dictionary<int, Label> labelList = new Dictionary<int, Label>();
         private Dictionary<int, Button> buttonList = new Dictionary<int, Button>();
-        private Dictionary<int, NumericUpDown> durationTextBoxList = new Dictionary<int, NumericUpDown>();
+        private Dictionary<int, Button> durationTextButtonList = new Dictionary<int, Button>();
+        private Dictionary<int, Dictionary<string, string>> durationList = new Dictionary<int, Dictionary<string, string>>();
 
         //loading saved tasks
         private Dictionary<int, Label> tasksLabelList = new Dictionary<int, Label>();
         private Dictionary<int, Label> tasksActiveInactiveLabelList = new Dictionary<int, Label>();
         private Dictionary<int, Button> tasksButtonList = new Dictionary<int, Button>();
         private Dictionary<int, Button> tasksActiveStateButtonList = new Dictionary<int, Button>();
+        private Dictionary<int, string> taskDurationList = new Dictionary<int, string>();
 
         //itnerval TImer history
         private List<string> intervalHistory = new List<string>();
@@ -40,6 +49,10 @@ namespace ScheduleManager
         private DBConnection dbCon;
 
         private bool isInBetweenChecked = false;
+        // lifetime has an in betweeen task
+        private bool hasInBetween = false;
+        // toggle in between status
+        private bool inBetweenToggleStatus = false;
         private bool timerActive = false;
         private bool timerRunning = false;
 
@@ -49,6 +62,7 @@ namespace ScheduleManager
         private string checkBoxName = "taskCheckBox_";
         private string defaultTextBoxText = "Enter Task";
         private string defaultDurationTextBoxText = "Duration";
+        private string defaultInterval = "";
         private string interval = "";
         private string hour = "hour";
         private string min = "min";
@@ -56,12 +70,17 @@ namespace ScheduleManager
         private string intervalLabelText = "Interval Ends";
         private string intervalStartLabelText = "Interval Started";
         private string messageLabelText = "Message: ";
+        //table names
+        private string duration_table = "duration";
+        private string tasks_table = "tasks";
 
         private Timer timer1;
 
+        //due time for task
         DateTime dueTime;
+        //time difference for current task till due time
+        TimeSpan dateTimeDiff;
 
-        
 
         public enum messageType
         {
@@ -88,8 +107,6 @@ namespace ScheduleManager
 
             start_end_button.Text = (!this.timerActive) ? "Start" : "End";
         }
-
-
 
         public void initDB()
         {
@@ -135,16 +152,15 @@ namespace ScheduleManager
                 }
             };
         }
+
         private void loadInterval()
         {
             //get time interval from db
-            var data = DBHelper.Get(this.dbCon, "duration", limit: 1, orderBy: "id DESC");
+            var data = DBHelper.Get(this.dbCon, this.duration_table, limit: 1, orderBy: "id DESC", whereClause: "task_id is null");
             if(data.Keys.Count > 0)
             {
-                this.interval = data[0]["time"];
-                this.interval += " " + data[0]["type"];
-
-                timer_label.Text = this.interval;
+                this.defaultInterval = data[0]["time"] + " " + data[0]["type"];
+                this.changeTimerLabelText(data[0]["time"], data[0]["type"]);
             }
             else
             {
@@ -153,9 +169,22 @@ namespace ScheduleManager
             
         }
 
+        private void changeTimerLabelText(string time, string type)
+        {
+            string interval = time;
+            interval += " " + type;
+
+            timer_label.Text = interval;
+        }
+
+        private int getDurationValue (int value)
+        {
+            return value;
+        }
+
         private void getTodaysTask()
         {
-            var data = DBHelper.Get(this.dbCon, "tasks", orderBy: "id ASC", whereClause: "created_at = '" + DateTime.Today.ToString("yyyy-MM-dd") + "'");
+            var data = DBHelper.Get(this.dbCon, this.tasks_table, orderBy: "id ASC", whereClause: "created_at = '" + DateTime.Today.ToString("yyyy-MM-dd") + "'");
 
             if (data.Keys.Count > 0)
             {
@@ -177,6 +206,24 @@ namespace ScheduleManager
 
                     counter++;
 
+                    if (data[key]["in_between"] == "1")
+                    {
+                        //tasks for the day has an in-between task
+                        this.hasInBetween = true;
+                        this.inBetweenId = id;
+                        //after first interval run ,toggle in-between
+                        
+                        //if inbetween task is first (current) task set inBetweenToggleStatus as false
+                        //let next task run after in between is run in first interval
+                        this.inBetweenToggleStatus = (data[key]["current"] == "1") ? false : true;
+
+                    }
+                    //check if task has custom timer
+                    var result = DBHelper.Get(this.dbCon, this.duration_table, whereClause: ("task_id=" + id));
+                    if (result.Count > 0)
+                    {
+                        this.taskDurationList.Add(id, result[0]["time"] + " " + result[0]["type"]);
+                    }
 
                     FlowLayoutPanel flowLayoutPanel = new FlowLayoutPanel();
                     //flowLayoutPanel.BackColor = Color.Beige;
@@ -244,7 +291,7 @@ namespace ScheduleManager
                     if (data[key]["current"] == "1" && this.currentTaskId == -1)
                     {
 
-                        this.activateTask(id);
+                        this.activateTask(id, "initial");
                     }
                 }
 
@@ -255,7 +302,7 @@ namespace ScheduleManager
                     int id = Convert.ToInt32(data[0]["id"]);
                     //this.currentTaskId = id;
                     //this.tasksActiveInactiveLabelList[id].Text = "Active";
-                    this.activateTask(id);
+                    this.activateTask(id, "initial");
 
                 }
 
@@ -294,9 +341,28 @@ namespace ScheduleManager
                 this.tasksButtonList[id].Tag = "1";
                 this.tasksLabelList[id].Font = new Font(this.tasksLabelList[id].Font, FontStyle.Bold);
                 active_task_label.Text = this.tasksLabelList[id].Text;
+                
+                //check if current task has custom timer
+                // if source is button, set due time
+                if (this.taskDurationList.ContainsKey(id))
+                {
+                    this.interval = this.taskDurationList[id];
+                }
+                else
+                {
+                    this.interval = "";
+                }
+
+                if (source is "button")
+                {
+                    // user manually activated a task, reset timer to match task duration and update timer label
+                    this.stopTimer();
+                    this.setDueTime();
+                    this.startTimer();
+
+                }
             }
             
-
 
             if (source != "button") this.showMessage("Task Activated.", messageType.positive);
 
@@ -355,24 +421,14 @@ namespace ScheduleManager
                 }
             };
 
-            NumericUpDown durationTextBox = new NumericUpDown();
-            durationTextBox.Name = this.durationTextBoxName + componentId;
-            durationTextBox.Text = this.defaultDurationTextBoxText;
-            durationTextBox.Width = 60;
+            Button durationTextButton = new Button();
+            durationTextButton.Name = this.durationTextBoxName + componentId;
+            durationTextButton.Text = "Set Custom Time";
+            durationTextButton.Width = 100;
 
-            durationTextBox.GotFocus += delegate {
-                if (this.defaultDurationTextBoxText == durationTextBox.Text)
-                {
-                    durationTextBox.Text = "";
-                }
-            };
-
-            durationTextBox.Leave += delegate
+            durationTextButton.Click += delegate 
             {
-                if (durationTextBox.Text == "")
-                {
-                    durationTextBox.Text = this.defaultDurationTextBoxText;
-                }
+                this.ShowCustomDialog("", componentId);
             };
 
             CheckBox checkBox = new CheckBox();
@@ -417,14 +473,14 @@ namespace ScheduleManager
                     this.checkBoxList.Remove(componentId);
                     this.labelList.Remove(componentId);
                     this.textBoxList.Remove(componentId);
-                    this.durationTextBoxList.Remove(componentId);
+                    this.durationTextButtonList.Remove(componentId);
                 }
                 
             };
 
             flowLayoutPanel.Controls.Add(label);
             flowLayoutPanel.Controls.Add(textBox);
-            //flowLayoutPanel.Controls.Add(durationTextBox);
+            flowLayoutPanel.Controls.Add(durationTextButton);
             flowLayoutPanel.Controls.Add(checkBox);
             flowLayoutPanel.Controls.Add(removeButton);
 
@@ -434,7 +490,7 @@ namespace ScheduleManager
             this.labelList.Add(componentId, label);
             this.textBoxList.Add(componentId, textBox);
             this.buttonList.Add(componentId, removeButton);
-            this.durationTextBoxList.Add(componentId, durationTextBox);
+            this.durationTextButtonList.Add(componentId, durationTextButton);
 
             form_panel.Controls.Add(flowLayoutPanel);
             
@@ -459,15 +515,27 @@ namespace ScheduleManager
                     dict.Add("created_at", DateTime.Today.ToString("yyyy-MM-dd"));
                     dict.Add("active", "1");
                     dict.Add("current", "0");
-                    if (this.durationTextBoxList[key].Text != this.defaultDurationTextBoxText)
+                    
+                    DBHelper.Insert(this.dbCon, this.tasks_table, dict);
+
+                    System.Diagnostics.Debug.WriteLine("Task - Inserting " + key + " - " + (this.durationList.ContainsKey(key)) + " - ");
+                    if (this.durationList.ContainsKey(key))
                     {
                         // task has a custom duration
-                        //dict.Add("duration", );
+                        //get id for current task to save for duration (FK)
+                        var result = DBHelper.Get(this.dbCon, this.tasks_table, limit: 1, orderBy: "id DESC");
+
+                        if (result.Count > 0)
+                        {
+                            var durationDict = new Dictionary<string, string>();
+                            durationDict.Add("time", this.durationList[key]["time"]);
+                            durationDict.Add("type", this.durationList[key]["type"]);
+                            durationDict.Add("created_at", this.durationList[key]["createdAt"]);
+                            durationDict.Add("task_id", result[0]["id"]);
+
+                            DBHelper.Insert(this.dbCon, this.duration_table, durationDict);
+                        }
                     }
-
-
-                    DBHelper.Insert(this.dbCon, "tasks", dict);
-                    //MessageBox.Show("Task " + task + " In Between " + inBetween.ToString());
                 }
                 this.showMessage("Task(s) Saved.", messageType.positive);
                 this.getTodaysTask();
@@ -485,7 +553,7 @@ namespace ScheduleManager
             this.dbCon.Close();
         }
 
-        private void ShowCustomDialog(string caption)
+        private void ShowCustomDialog(string caption, int taskId=-1)
         {
             int durationValue = -1;
 
@@ -496,10 +564,16 @@ namespace ScheduleManager
 
             Label textLabel = new Label() { Left = 50, Top = 20, Text = "Duration" };
             NumericUpDown inputBox = new NumericUpDown() { Left = 50, Top = 50, Width = 150 };
-            Button confirmation = new Button() { Text = "Save", Left = 100, Width = 100, Top = 120 };
+
+            FlowLayoutPanel buttonFlowLayoutPanel = new FlowLayoutPanel() { Width = 250, Top = 120, Left = 10 };
+            buttonFlowLayoutPanel.Anchor = AnchorStyles.Left;
+
+            Button confirmation = new Button() { Text = "Save", Width = 100 };
+            Button exitButton = new Button() { Text = "Cancel", Width = 100 };
 
             FlowLayoutPanel flowLayoutPanel = new FlowLayoutPanel() { Left = 50, Top = 70};
             
+
             flowLayoutPanel.Width = 200;
             flowLayoutPanel.Height = 30;
             flowLayoutPanel.Tag = componentId;
@@ -553,28 +627,56 @@ namespace ScheduleManager
                     return;
                 }
 
-                var data = new Dictionary<string, string>();
-                data.Add("time", inputBox.Value.ToString());
-                data.Add("created_at", DateTime.Today.ToString("yyyy-MM-dd"));
-                data.Add("type", (minCheckBox.Checked) ? this.min : this.hour);
-                //save to db
-                DBHelper.Insert(this.dbCon, "duration", data);
-                //update timer
+                var type = (minCheckBox.Checked) ? this.min : (hourCheckBox.Checked) ? this.hour : this.sec;
+                var time = inputBox.Value.ToString();
+                var createdAt = DateTime.Today.ToString("yyyy-MM-dd");
+
+                if (taskId != -1)
+                {
+                    // custom timer for a task
+                    // create key to task duration list if task doesnt have an existing key
+                    // [0 => time, 1 => createdAt, 2 => type]
+                    if (!this.durationList.ContainsKey(taskId)) this.durationList.Add(taskId, new Dictionary<string, string>());
+                    this.durationList[taskId].Add("time", time);
+                    this.durationList[taskId].Add("createdAt", createdAt);
+                    this.durationList[taskId].Add("type", type);
+                }
+                else
+                {
+                    // default timer for app
+                    var data = new Dictionary<string, string>();
+                    data.Add("time", time);
+                    data.Add("created_at", createdAt);
+                    data.Add("type", type);
+                    //save to db
+                    DBHelper.Insert(this.dbCon, this.duration_table, data);
+                    //update timer
+                    this.defaultInterval = time + " " + type;
+                }
 
                 //close form
                 prompt.Close();
             };
 
-            
+            exitButton.Click += delegate
+            {
+
+                //close form
+                prompt.Close();
+            };
+
             flowLayoutPanel.Controls.Add(secCheckBox);
             flowLayoutPanel.Controls.Add(minCheckBox);
             flowLayoutPanel.Controls.Add(hourCheckBox);
 
+            buttonFlowLayoutPanel.Controls.Add(confirmation);
+            buttonFlowLayoutPanel.Controls.Add(exitButton);
 
-            prompt.Controls.Add(confirmation);
+
             prompt.Controls.Add(textLabel);
             prompt.Controls.Add(inputBox);
             prompt.Controls.Add(flowLayoutPanel);
+            prompt.Controls.Add(buttonFlowLayoutPanel);
 
             prompt.FormClosing += (s, ev) => 
             {
@@ -582,6 +684,7 @@ namespace ScheduleManager
                 {
                     durationValue = -1;
                 }
+                
                 
             };
 
@@ -631,47 +734,119 @@ namespace ScheduleManager
 
         private void intervalCheck()
         {
+            int nextId = -1;
+
             if (this.currentTaskId > 0)
             {
-                // move from taskbar to main screen 
+                
                 if (FormWindowState.Minimized == this.WindowState)
                 {
+                    // move from taskbar to main screen 
                     this.Show();
                     this.WindowState = FormWindowState.Normal;
                 }
-                
 
-                // update db un-set current active
-                var updateData = new Dictionary<string, string>();
-                updateData.Add("current", "0");
+                //bool used to check if the in between task is valid e.g is active
+                bool isInBetweenValid = true;
 
-                DBHelper.Update(this.dbCon, "tasks", updateData, "id=" + this.currentTaskId);
-
-                // update db set current active to next
-                int nextId = getNextTaskId();
-
-                for (; ; )
+                if (this.hasInBetween)
                 {
-                    if (this.tasksActiveStateButtonList[nextId].Tag.ToString() == "0")
+                    var nextTaskState = this.tasksActiveStateButtonList[this.inBetweenId].Tag.ToString();
+                    if (nextTaskState == "0")
                     {
-                        // make checks, next task is deactivated skip
-                        this.activateTask(-1, oldTaskId: this.currentTaskId);
-                        this.currentTaskId = nextId;
-                        nextId = getNextTaskId();
+                        //in between task is not set to be active
+                        isInBetweenValid = false;
                     }
-                    else
+                }
+                //&& (this.currentTaskId != this.inBetweenId)
+                if (this.hasInBetween && this.inBetweenToggleStatus && isInBetweenValid)
+                {
+                    // task has inbetween and interval is on inbetween
+                    this.taskIdBeforeInBetweenId = this.currentTaskId;
+                    this.activateTask(this.inBetweenId, "interval");
+                    
+                }
+                else
+                {
+                    if (this.hasInBetween && this.taskIdBeforeInBetweenId != -1)
                     {
-                        break;
+                        // deactivate in between task
+                        this.activateTask(-1, oldTaskId: this.inBetweenId);
+                        
+                        // update db, de-activate previous task before inbetween
+                        this.currentTaskId = this.taskIdBeforeInBetweenId;
                     }
+
+                    // update db un-set current active
+                    var updateData = new Dictionary<string, string>();
+                    updateData.Add("current", "0");
+
+                    DBHelper.Update(this.dbCon, this.tasks_table, updateData, "id=" + this.currentTaskId);
+
+                    // update db set current active to next
+                    nextId = getNextTaskId();
+                    int skipCounter = 0;
+                
+                    for (; ; )
+                    {
+                        
+                        if (this.hasInBetween && nextId == this.inBetweenId)
+                        {
+                            //deactivate previous id
+                            this.activateTask(-1, oldTaskId: this.currentTaskId);
+                            
+                            //if next id is inbetween task's id move to the next id
+                            this.currentTaskId = nextId;
+                            nextId = getNextTaskId();
+                        }
+
+                        var nextTaskState = this.tasksActiveStateButtonList[nextId].Tag.ToString();
+
+                        if (nextTaskState == "0")
+                        {
+                            // make checks, next task is deactivated skip
+                            this.activateTask(-1, oldTaskId: this.currentTaskId);
+                            this.currentTaskId = nextId;
+                            nextId = getNextTaskId();
+
+                            skipCounter++;
+                        }
+                        else if (nextTaskState == "1")
+                        {
+                            // next active task selected
+                            break;
+                        }
+
+                        if (skipCounter == (this.tasksActiveStateButtonList.Count - 1))
+                        {
+                            // all tasks were turned off
+                            skipCounter = 0;
+                            this.showMessage("No Task turned on.", messageType.negative);
+                            return;
+                        }
+                    }
+
+
+                    updateData = new Dictionary<string, string>();
+                    updateData.Add("current", "1");
+
+                    DBHelper.Update(this.dbCon, this.tasks_table, updateData, "id=" + nextId);
+                    this.activateTask(nextId, "interval");
+
                 }
 
 
-                updateData = new Dictionary<string, string>();
-                updateData.Add("current", "1");
+                if (this.hasInBetween)
+                {
+                    if (isInBetweenValid && nextId != -1)
+                    {
+                        this.taskIdBeforeInBetweenId = nextId;
+                    }
 
-                DBHelper.Update(this.dbCon, "tasks", updateData, "id=" + nextId);
-                this.activateTask(nextId, "interval");
-
+                    this.inBetweenToggleStatus = !this.inBetweenToggleStatus;
+                }
+                
+                
                 // update timer properties
                 this.setDueTime();
             }
@@ -681,52 +856,51 @@ namespace ScheduleManager
             }
         }
 
-        private void setDueTime()
+        private string[] getInterval()
         {
-            var interval = this.interval.Split(' ');
-            double intervalDuration = Convert.ToInt32(interval[0]);
+            return this.interval != "" ? this.interval.Split(' ') : this.defaultInterval.Split(' ');
+        }
 
-            // for due time
-            dueTime = DateTime.Now;
-            var startingTime = DateTime.Now.ToShortTimeString();
+        private void setDueTime(bool isPlayed=false, double timeDiff=-1)
+        {
+            // if isplayed, use time difference till previous end of interval
+            string[] interval = new string[2] { "", "" };
+            double intervalDuration = 0;
 
-            if (this.timerActive)
+            
+
+            if (!isPlayed || (isPlayed && timeDiff == -1))
             {
-                timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime;
-                due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
+                
+                interval = this.getInterval();
+                
+                intervalDuration = Convert.ToInt32(interval[0]);
+                
+
+                //update timer label
+                this.changeTimerLabelText(interval[0], interval[1]);
             }
             else
             {
-                timer_start_label.Text = this.intervalStartLabelText;
-                due_time_label.Text = this.intervalLabelText;
-
-                return;
+                intervalDuration = timeDiff;
             }
+
+            // for due time
+            dueTime = DateTime.Now;
+            var startingTime = DateTime.Now;
 
 
             if (interval[1] == this.hour)
             {
                 dueTime = DateTime.Now.AddHours(Convert.ToInt32(intervalDuration));
                 intervalDuration = Convert.ToInt32(this.ConvertHoursToMilliseconds(intervalDuration));
-                //due_time_label.Text = dueTime.ToShortTimeString();
-                    
             }
 
-            if (interval[1] == this.min)
+            if (isPlayed || interval[1] == this.min)
             {
+                //when timer is resumed(isplayed) timespan value sent is always in minutes
                 dueTime = DateTime.Now.AddMinutes(Convert.ToInt32(intervalDuration));
                 intervalDuration = Convert.ToInt32(this.ConvertMinutesToMilliseconds(intervalDuration));
-
-                //if (this.timerActive)
-                //{
-                //    timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime;
-                //    due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
-                //}
-                //else
-                //{
-                //    timer_start_label.Text = this.intervalStartLabelText;
-                //    due_time_label.Text = this.intervalLabelText;
-                //}
                     
             }
 
@@ -734,18 +908,25 @@ namespace ScheduleManager
             {
                 dueTime = DateTime.Now.AddSeconds(Convert.ToInt32(intervalDuration));
                 intervalDuration = Convert.ToInt32(this.ConvertSecondsToMilliseconds(intervalDuration));
-
-                //if (this.timerActive)
-                //    due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
-                //else
-                //    due_time_label.Text = this.intervalLabelText;
             }
 
-            
+            if (this.timerActive)
+            {
+                timer_start_label.Text = this.intervalStartLabelText + " - " + startingTime.ToShortTimeString();
+                due_time_label.Text = this.intervalLabelText + " - " + dueTime.ToShortTimeString();
+            }
+            else
+            {
+                timer_start_label.Text = this.intervalStartLabelText;
+                due_time_label.Text = this.intervalLabelText;
 
+                //return;
+            }
+
+            //MessageBox.Show("Time Interval: " + this.interval + " DefTime Interval: " + this.defaultInterval + " intervalDuration " + intervalDuration);
             this.intervalDuration = intervalDuration;
 
-            if (this.timerActive)  intervalHistory.Add(string.Format("Started At: {0} - Ending At: {1}", startingTime, dueTime.ToShortTimeString()));
+            if (this.timerActive)  intervalHistory.Add(string.Format("Started At: {0} - Ending At: {1}", startingTime.ToLongTimeString(), dueTime.ToLongTimeString()));
 
             //update timer interval
             if (timer1 != null) timer1.Interval = Convert.ToInt32(this.intervalDuration);
@@ -758,68 +939,99 @@ namespace ScheduleManager
             //-on resume timer is set to run till end of remaining time
             //-on end of remaining time, reset interval to default from db
 
-            if (this.timerActive)
+            
+
+            if (this.timerRunning)
             {
                 var currentDateTime = DateTime.Now;
                 //get difference between now and dueTime
-                var dateTimeDiff = dueTime.Subtract(currentDateTime);
+                this.dateTimeDiff = dueTime.Subtract(currentDateTime);
                 showMessage(dateTimeDiff.TotalMinutes.ToString(), messageType.neutral);
-                this.timerActive = false;
-                timer1.Stop();
-                timer1.Enabled = false;
+                this.timerRunning = false;
+                showMessage("Timer Paused", messageType.positive);
+                stopTimer();
                 
             }
+            else
+            {
+
+                this.timerRunning = true;
+                setDueTime(isPlayed: true, timeDiff: this.dateTimeDiff.TotalMinutes);
+                this.startTimer();
+                showMessage("Timer Resumed", messageType.positive);
+            }
+
+            pause_button.Text = (this.timerRunning) ? "Pause" : "Resume";
         }
 
         private void start_end_button_Click(object sender, EventArgs e)
         {
+
             this.timerActive = !this.timerActive;
+            this.timerRunning = this.timerActive;
             
             start_end_button.Text = (!this.timerActive) ? "Start" : "End";
 
             setDueTime();
 
-            //Convert.ToInt32(intervalDuration)
-            timer1 = new Timer
-            {
-                Interval = Convert.ToInt32(intervalDuration)
-            };
-
             if (this.timerActive)
             {
-                timer1.Start();
-                timer1.Enabled = true;
+                this.startTimer();
                 this.showMessage("Timer Active", messageType.neutral);
             }
             else
             {
-                timer1.Stop();
-                timer1.Enabled = false;
-                
+                this.stopTimer();
                 this.showMessage("Timer Deactived", messageType.positive);
             }
 
-            int counter = 0;
-            timer1.Tick += new EventHandler((s, ev) =>
+        }
+
+        private void startTimer()
+        {
+            if (timer1 == null)
             {
-                
-                if (!this.timerActive)
+                timer1 = new Timer
                 {
-                    timer1.Stop();
-                    MessageBox.Show("Timer Stopped");
-                }
-                else
-                {
-                    //if ()
-                    //{
+                    Interval = Convert.ToInt32(intervalDuration)
+                };
 
-                    //}
-                    this.intervalCheck();
-                    MessageBox.Show("Timer Interval Reached");
-                }
+                timer1.Start();
+                timer1.Enabled = true;
+            }
 
-                counter++;
-            });
+            if (timer1 != null)
+            {
+                // subscribe to event
+                timer1.Tick += timerEvent;
+            }
+        }
+
+        private void stopTimer()
+        {
+            if (timer1 != null)
+            {
+                timer1.Stop();
+                timer1.Enabled = false;
+                timer1.Dispose();
+                //unsubscribe from timer event
+                timer1.Tick -= timerEvent;
+                //reset to null
+                timer1 = null;
+            }
+        }
+
+        private void timerEvent (object s, EventArgs ev)
+        {
+            if (!this.timerActive)
+            {
+                timer1.Stop();
+                MessageBox.Show("Timer Stopped");
+            }
+            else
+            {
+                this.intervalCheck();
+            }
         }
 
         private void Form1_Resize(object sender, EventArgs e)
@@ -838,7 +1050,7 @@ namespace ScheduleManager
             else if (FormWindowState.Normal == this.WindowState)
             {
                 mynotifyicon.Visible = false;
-                this.ShowInTaskbar = false;
+                this.ShowInTaskbar = true;
             }
         }
 

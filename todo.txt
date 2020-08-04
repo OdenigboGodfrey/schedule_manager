@@ -1,0 +1,5 @@
+﻿- rename saved task
+- on resumption, show app
+- auto stop interval on sleep etc
+- db, make sure in between doesnt exist before saving in between
+- ability to reset the app contents to match db updates
