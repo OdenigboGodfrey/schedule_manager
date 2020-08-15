@@ -103,7 +103,7 @@ namespace ScheduleManager
             this.loadInterval();
             this.getTodaysTask();
 
-            //powerModeChanged();
+            powerModeChanged();
 
             start_end_button.Text = (!this.timerActive) ? "Start" : "End";
         }
@@ -127,7 +127,9 @@ namespace ScheduleManager
                 {
                     case PowerModes.Resume:
                         // show application
-                        MessageBox.Show("App Resumed");
+
+                        pause_button.Text = "Resume";
+                        
                         // move from taskbar to main screen 
                         if (FormWindowState.Minimized == this.WindowState)
                         {
@@ -138,16 +140,12 @@ namespace ScheduleManager
                         break;
                     case PowerModes.Suspend:
                         // pause timer
-                        this.timerActive = false;
+                        pause_button.Text = "Pause";
 
-                        start_end_button.Text = "Start";
+                        this.pauseTimer();
 
-                        if (timer1 != null)
-                        {
-                            timer1.Enabled = false;
-                        }
+                        this.showMessage("System Suspended. Timer Paused.", messageType.positive);
 
-                        this.showMessage("System Suspended. Timer Deactived", messageType.positive);
                         break;
                 }
             };
@@ -858,6 +856,7 @@ namespace ScheduleManager
 
         private string[] getInterval()
         {
+            //break the interval into a string array (e.g 45 min [45, min])
             return this.interval != "" ? this.interval.Split(' ') : this.defaultInterval.Split(' ');
         }
 
@@ -933,24 +932,28 @@ namespace ScheduleManager
 
         }
 
+        private void pauseTimer()
+        {
+            var currentDateTime = DateTime.Now;
+            //get difference between now and dueTime
+            this.dateTimeDiff = dueTime.Subtract(currentDateTime);
+            this.timerRunning = false;
+            showMessage("Timer Paused", messageType.positive);
+
+            intervalHistory.Add(string.Format("Paused At: {0}", DateTime.Now.ToLongTimeString()));
+
+            stopTimer();
+        }
+
         private void pause_button_Click(object sender, EventArgs e)
         {
             //if timer is running -> get length to next stop
             //-on resume timer is set to run till end of remaining time
             //-on end of remaining time, reset interval to default from db
 
-            
-
             if (this.timerRunning)
             {
-                var currentDateTime = DateTime.Now;
-                //get difference between now and dueTime
-                this.dateTimeDiff = dueTime.Subtract(currentDateTime);
-                showMessage(dateTimeDiff.TotalMinutes.ToString(), messageType.neutral);
-                this.timerRunning = false;
-                showMessage("Timer Paused", messageType.positive);
-                stopTimer();
-                
+                this.pauseTimer();
             }
             else
             {
@@ -958,6 +961,9 @@ namespace ScheduleManager
                 this.timerRunning = true;
                 setDueTime(isPlayed: true, timeDiff: this.dateTimeDiff.TotalMinutes);
                 this.startTimer();
+
+                intervalHistory.Add(string.Format("Resumed At: {0}", DateTime.Now.ToLongTimeString()));
+
                 showMessage("Timer Resumed", messageType.positive);
             }
 
@@ -971,6 +977,7 @@ namespace ScheduleManager
             this.timerRunning = this.timerActive;
             
             start_end_button.Text = (!this.timerActive) ? "Start" : "End";
+            
 
             setDueTime();
 
@@ -981,6 +988,9 @@ namespace ScheduleManager
             }
             else
             {
+                // timer is stopped
+                pause_button.Text = "Pause";
+
                 this.stopTimer();
                 this.showMessage("Timer Deactived", messageType.positive);
             }
@@ -1084,6 +1094,7 @@ namespace ScheduleManager
             flowLayoutPanel.Tag = componentId;
             flowLayoutPanel.Anchor = AnchorStyles.Bottom;
             flowLayoutPanel.Dock = DockStyle.Fill;
+            flowLayoutPanel.AutoScroll = true;
 
             intervalHistory.ForEach((item) => 
             {
