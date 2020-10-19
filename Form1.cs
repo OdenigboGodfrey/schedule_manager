@@ -73,6 +73,7 @@ namespace ScheduleManager
         //table names
         private string duration_table = "duration";
         private string tasks_table = "tasks";
+        private string date_time_diff = "date_time_diff";
 
         private Timer timer1;
 
@@ -127,8 +128,14 @@ namespace ScheduleManager
                 {
                     case PowerModes.Resume:
                         // show application
+                        var data = DBHelper.Get(this.dbCon, this.date_time_diff, limit: 1, orderBy: "id DESC", whereClause: "active=0");
 
-                        pause_button.Text = "Resume";
+                        if (data.Keys.Count > 0)
+                        {
+                            // previous timer record exists
+                            pause_button.Text = "Resume";
+                        }
+                        
                         
                         // move from taskbar to main screen 
                         if (FormWindowState.Minimized == this.WindowState)
@@ -139,12 +146,16 @@ namespace ScheduleManager
 
                         break;
                     case PowerModes.Suspend:
-                        // pause timer
-                        pause_button.Text = "Pause";
+                        
+                        if (this.timerRunning)
+                        {
+                            // pause timer only if timer isnt paused already
+                            pause_button.Text = "Pause";
+                            this.pauseTimer();
 
-                        this.pauseTimer();
-
-                        this.showMessage("System Suspended. Timer Paused.", messageType.positive);
+                            this.showMessage("System Suspended. Timer Paused.", messageType.positive);
+                        }
+                        
 
                         break;
                 }
@@ -162,6 +173,12 @@ namespace ScheduleManager
             }
             else
             {
+                //save default itnerval timer as 45 mins
+                var type =  this.min;
+                var time = "45";
+                var createdAt = DateTime.Today.ToString("yyyy-MM-dd");
+                this.saveIntervalTimer(time, createdAt, type);
+
                 showMessage("No saved interval.", messageType.messageBox);
             }
             
@@ -345,6 +362,11 @@ namespace ScheduleManager
                 if (this.taskDurationList.ContainsKey(id))
                 {
                     this.interval = this.taskDurationList[id];
+                    // if custom timer is == 0, then user reset custom timer for this task to default
+                    if (this.getInterval()[0] == "0")
+                    {
+                        this.interval = "";
+                    }
                 }
                 else
                 {
@@ -619,7 +641,7 @@ namespace ScheduleManager
 
             confirmation.Click += (sender, e) =>
             {
-                if (!(inputBox.Value > 0))
+                if (!(inputBox.Value > 0) && taskId == -1)
                 {
                     MessageBox.Show("Invalid Value");
                     return;
@@ -634,22 +656,26 @@ namespace ScheduleManager
                     // custom timer for a task
                     // create key to task duration list if task doesnt have an existing key
                     // [0 => time, 1 => createdAt, 2 => type]
-                    if (!this.durationList.ContainsKey(taskId)) this.durationList.Add(taskId, new Dictionary<string, string>());
-                    this.durationList[taskId].Add("time", time);
-                    this.durationList[taskId].Add("createdAt", createdAt);
-                    this.durationList[taskId].Add("type", type);
+                    if (!this.durationList.ContainsKey(taskId))
+                    {
+                        this.durationList.Add(taskId, new Dictionary<string, string>());
+                        this.durationList[taskId].Add("time", time);
+                        this.durationList[taskId].Add("createdAt", createdAt);
+                        this.durationList[taskId].Add("type", type);
+                    } 
+                    else
+                    {
+                        //update timer
+                        this.durationList[taskId]["time"] = time;
+                        this.durationList[taskId]["createdAt"] = createdAt;
+                        this.durationList[taskId]["type"] = type;
+                    }
+                    
                 }
                 else
                 {
                     // default timer for app
-                    var data = new Dictionary<string, string>();
-                    data.Add("time", time);
-                    data.Add("created_at", createdAt);
-                    data.Add("type", type);
-                    //save to db
-                    DBHelper.Insert(this.dbCon, this.duration_table, data);
-                    //update timer
-                    this.defaultInterval = time + " " + type;
+                    this.saveIntervalTimer(time, createdAt, type);
                 }
 
                 //close form
@@ -693,6 +719,19 @@ namespace ScheduleManager
             };
 
             prompt.ShowDialog();
+        }
+
+        private void saveIntervalTimer(String time, String createdAt, String type)
+        {
+            var data = new Dictionary<string, string>();
+            data.Add("time", time);
+            data.Add("created_at", createdAt);
+            data.Add("type", type);
+            //save to db
+            DBHelper.Insert(this.dbCon, this.duration_table, data);
+            //update timer
+            this.defaultInterval = time + " " + type;
+            this.loadInterval();
         }
 
         private void change_timer_Click(object sender, EventArgs e)
@@ -943,6 +982,27 @@ namespace ScheduleManager
             intervalHistory.Add(string.Format("Paused At: {0}", DateTime.Now.ToLongTimeString()));
 
             stopTimer();
+            //save time difference to db
+            this.saveTimeLeftToDb();
+        }
+
+        private void saveTimeLeftToDb()
+        {
+            
+            var data = new Dictionary<string, string>();
+            data.Add("minutes_left", this.dateTimeDiff.TotalMinutes.ToString());
+            data.Add("created_at", DateTime.Today.ToString("yyyy-MM-dd HH:mm:ss"));
+            data.Add("active", "1");
+            //save to db
+            DBHelper.Insert(this.dbCon, this.date_time_diff, data);
+        }
+
+        private void updateTimeLeftRecord(string currentId)
+        {
+            var updateData = new Dictionary<string, string>();
+            updateData.Add("active", "0");
+
+            DBHelper.Update(this.dbCon, this.date_time_diff, updateData, "id=" + currentId);
         }
 
         private void pause_button_Click(object sender, EventArgs e)
@@ -959,7 +1019,18 @@ namespace ScheduleManager
             {
 
                 this.timerRunning = true;
-                setDueTime(isPlayed: true, timeDiff: this.dateTimeDiff.TotalMinutes);
+                //get time difference from latest row in db
+                var data = DBHelper.Get(this.dbCon, this.date_time_diff, limit: 1, orderBy: "id DESC", whereClause: "active=1");
+                double minsLeft = 0;
+
+                if (data.Keys.Count > 0)
+                {
+                    minsLeft = Convert.ToDouble(data[0]["minutes_left"]);
+                    //update record in db
+                    this.updateTimeLeftRecord(data[0]["id"]);
+                }
+
+                setDueTime(isPlayed: true, timeDiff: minsLeft);
                 this.startTimer();
 
                 intervalHistory.Add(string.Format("Resumed At: {0}", DateTime.Now.ToLongTimeString()));
@@ -972,7 +1043,11 @@ namespace ScheduleManager
 
         private void start_end_button_Click(object sender, EventArgs e)
         {
-
+            if (this.tasksButtonList.Count == 0)
+            {
+                showMessage("No Tasks loaded", messageType.negative);
+                return;
+            }
             this.timerActive = !this.timerActive;
             this.timerRunning = this.timerActive;
             

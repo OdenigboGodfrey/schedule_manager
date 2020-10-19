@@ -31,9 +31,16 @@ namespace ScheduleManager
             tasks.Add("active", new List<string> { "tinyint", "", "" });
             tasks.Add("current", new List<string> { "tinyint", "", "" });
 
+            Dictionary<string, List<string>> date_time_diff = new Dictionary<string, List<string>>();
+
+            date_time_diff.Add("minutes_left", new List<string> { "text", "", "" });
+            date_time_diff.Add("created_at", new List<string> { "timestamp", "", "" });
+            date_time_diff.Add("active", new List<string> { "tinyint", "", "" });
+
 
             tables.Add("duration", duration);
             tables.Add("tasks", tasks);
+            tables.Add("date_time_diff", date_time_diff);
 
 
             if (dbCon.IsConnect())

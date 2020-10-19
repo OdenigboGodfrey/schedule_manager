@@ -1,5 +1,5 @@
-﻿- rename saved task
-- on resumption, show app
-- auto stop interval on sleep etc
+﻿- ability to reset the app contents to match db updates
+- edit saved task
 - db, make sure in between doesnt exist before saving in between
-- ability to reset the app contents to match db updates
+- pause and resume not working fine [timer resumption not updating interval labels]!!!
+- on sleep ends timer/timer label
